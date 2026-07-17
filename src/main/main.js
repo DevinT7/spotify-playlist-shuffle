@@ -77,11 +77,17 @@ handle('auth:connect', async () => {
 
 handle('auth:logout', () => auth.logout());
 
-handle('data:playlists', () => spotify.getPlaylists());
+handle('data:playlists', async () => {
+  const data = await spotify.getPlaylists();
+  // hide the app's internal rolling queue playlist from the picker
+  const qid = settings.get('queuePlaylistId');
+  if (qid) data.playlists = data.playlists.filter((p) => p.id !== qid);
+  return data;
+});
 
 handle('data:tracks', async ({ type, id, label }) => {
   if (type === 'liked') return { tracks: await spotify.getLikedTracks() };
-  if (type === 'library') return spotify.getWholeLibrary();
+  if (type === 'library') return spotify.getWholeLibrary(settings.get('queuePlaylistId'));
   return { tracks: await spotify.getPlaylistTracks(id, label) };
 });
 

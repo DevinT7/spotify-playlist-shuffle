@@ -76,12 +76,15 @@ class Spotify {
       for (const p of page.items || []) {
         if (!p) continue;
         const meta = p.items || p.tracks; // field renamed tracks -> items in 2026 API
+        const images = Array.isArray(p.images) ? p.images : [];
         out.push({
           id: p.id,
           uri: p.uri,
           name: p.name || 'Untitled',
           owner: (p.owner && (p.owner.display_name || p.owner.id)) || 'unknown',
           total: meta && typeof meta.total === 'number' ? meta.total : null,
+          imageLarge: images.length ? images[0].url : null,
+          imageSmall: images.length ? images[images.length - 1].url : null,
           // Dev Mode apps can only read items of owned/collaborative playlists.
           readable: Boolean(p.collaborative || (p.owner && p.owner.id === me.id)),
         });
@@ -95,10 +98,13 @@ class Spotify {
     for (const it of items || []) {
       const t = it && (it.item || it.track); // renamed track -> item in 2026 API
       if (t && t.uri && t.uri.startsWith('spotify:track:')) {
+        const albumImages = (t.album && Array.isArray(t.album.images) && t.album.images) || [];
         out.push({
           uri: t.uri,
           name: t.name || '?',
           artist: (t.artists || []).map((a) => a.name).join(', '),
+          art: albumImages.length ? albumImages[albumImages.length - 1].url : null,
+          durationMs: typeof t.duration_ms === 'number' ? t.duration_ms : null,
         });
       }
     }
@@ -124,14 +130,14 @@ class Spotify {
   }
 
   // DJ mode: liked songs + every readable playlist, deduped.
-  async getWholeLibrary() {
+  async getWholeLibrary(excludeId = null) {
     const { playlists } = await this.getPlaylists();
     const seen = new Map();
     const add = (tracks) => tracks.forEach((t) => seen.has(t.uri) || seen.set(t.uri, t));
     const skipped = [];
 
     add(await this.getLikedTracks());
-    for (const p of playlists.filter((p) => p.readable)) {
+    for (const p of playlists.filter((p) => p.readable && p.id !== excludeId)) {
       try {
         add(await this.getPlaylistTracks(p.id, `"${p.name}"`));
       } catch (e) {

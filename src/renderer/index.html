@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: https://*.scdn.co https://*.spotifycdn.com" />
   <title>True Shuffle</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -49,10 +50,33 @@
     </aside>
 
     <section id="main">
-      <!-- header -->
-      <header id="mainHeader">
+
+      <!-- ── Home ── -->
+      <div id="homeView">
+        <div class="homeDrag"></div>
+        <div class="homeInner">
+          <h1 id="greeting">Good evening</h1>
+          <p class="dim" id="greetSub">What should sound random today?</p>
+
+          <div class="hero" id="heroEverything">
+            <div class="heroIcon">🎧</div>
+            <div class="heroText">
+              <div class="heroTitle">Shuffle Everything</div>
+              <div class="dim">Liked Songs + all your playlists, deduped — one truly random mix. Bye, DJ.</div>
+            </div>
+            <button class="primary" id="heroBtn">▶&nbsp; Shuffle all</button>
+          </div>
+
+          <div class="homeLabel">OR PICK A SOURCE</div>
+          <div class="tileGrid" id="tileGrid"></div>
+        </div>
+      </div>
+
+      <!-- ── Source view ── -->
+      <header id="mainHeader" class="hidden">
+        <div id="srcCover"></div>
         <div class="headText">
-          <div id="srcTitle">Pick something to shuffle</div>
+          <div id="srcTitle"></div>
           <div id="srcMeta" class="dim"></div>
         </div>
         <div class="headActions">
@@ -64,13 +88,7 @@
         </div>
       </header>
 
-      <!-- track area -->
-      <div id="trackArea">
-        <div id="emptyState">
-          <div class="esDice">🎲</div>
-          <div class="esTitle">Choose a source on the left</div>
-          <div class="esSub dim">It loads and shuffles automatically — then press play.</div>
-        </div>
+      <div id="trackArea" class="hidden">
         <div id="loadingState" class="hidden">
           <div class="spinner"></div>
           <div id="loadingMsg" class="dim">Loading…</div>
@@ -78,7 +96,7 @@
         <div id="trackList" class="hidden"></div>
       </div>
 
-      <!-- bottom action bar -->
+      <!-- ── Bottom action bar ── -->
       <footer id="bottomBar">
         <div class="deviceGroup">
           <select id="deviceSelect" title="Where to play"></select>

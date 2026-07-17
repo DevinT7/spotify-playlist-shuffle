@@ -16,7 +16,7 @@ const invoke = async (channel, args) => {
   return res.data;
 };
 
-// ---------- toast ----------
+// ---------- helpers ----------
 let toastTimer = null;
 function toast(msg, isErr = false, ms = 3500) {
   const el = $('toast');
@@ -32,6 +32,28 @@ const setStatus = (id, msg, cls = '') => {
   el.className = 'status' + (cls ? ' ' + cls : '');
 };
 
+function fmtDuration(ms) {
+  if (ms == null) return '';
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function fmtTotal(tracks) {
+  let ms = 0;
+  for (const t of tracks) ms += t.durationMs || 0;
+  if (!ms) return '';
+  const min = Math.round(ms / 60000);
+  return min >= 60 ? `${Math.floor(min / 60)} hr ${min % 60} min` : `${min} min`;
+}
+
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 5) return 'Up late';
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
 window.api.onProgress((msg) => {
   if (loading) $('loadingMsg').textContent = msg;
 });
@@ -42,11 +64,20 @@ function show(view) {
   $('app').classList.toggle('hidden', view !== 'app');
 }
 
-function trackView(state) {
-  $('emptyState').classList.toggle('hidden', state !== 'empty');
+// main pane: 'home' | 'loading' | 'list'
+function mainView(state) {
+  $('homeView').classList.toggle('hidden', state !== 'home');
+  $('mainHeader').classList.toggle('hidden', state === 'home');
+  $('trackArea').classList.toggle('hidden', state === 'home');
   $('loadingState').classList.toggle('hidden', state !== 'loading');
   $('trackList').classList.toggle('hidden', state !== 'list');
   loading = state === 'loading';
+  if (state === 'home') {
+    selectedKey = null;
+    document.querySelectorAll('.source').forEach((el) => el.classList.remove('selected'));
+    const home = document.querySelector('.source[data-key="home"]');
+    if (home) home.classList.add('selected');
+  }
 }
 
 // ---------- init ----------
@@ -56,17 +87,15 @@ async function init() {
   for (const id of ['obRedirectUri', 'redirectUri']) $(id).value = s.redirectUri;
 
   const st = await invoke('auth:status');
-  if (st.connected) {
-    enterApp(st.user);
-  } else {
-    show('onboarding');
-  }
+  if (st.connected) enterApp(st.user);
+  else show('onboarding');
 }
 
 async function enterApp(user) {
   show('app');
   $('userBox').textContent = `Connected as ${user}`;
-  trackView('empty');
+  $('greeting').textContent = `${greeting()}, ${String(user).split(' ')[0]}`;
+  mainView('home');
   refreshDevices();
   await loadSources();
 }
@@ -91,10 +120,11 @@ $('obConnectBtn').addEventListener('click', async () => {
   }
 });
 
-// ---------- sidebar sources ----------
+// ---------- sources (sidebar + home tiles) ----------
 async function loadSources() {
   try {
     const { playlists } = await invoke('data:playlists');
+    const home = { key: 'home', type: 'home', name: 'Home', icon: '⌂' };
     const mixes = [
       { key: 'library', type: 'library', id: null, name: 'Everything', icon: '🎧', count: '', locked: false, hint: 'liked songs + all your playlists, deduped' },
       { key: 'liked', type: 'liked', id: null, name: 'Liked Songs', icon: '💚', count: '', locked: false },
@@ -108,22 +138,26 @@ async function loadSources() {
         id: p.id,
         name: p.name,
         icon: p.readable ? '♪' : '🔒',
+        imageSmall: p.imageSmall,
+        imageLarge: p.imageLarge,
         count: p.total != null ? String(p.total) : '',
         locked: !p.readable,
         owner: p.owner,
       };
       (p.readable ? mine : locked).push(item);
     }
-    sources = [...mixes, ...mine, ...locked];
-    renderSources({ mixes, mine, locked });
+    sources = [home, ...mixes, ...mine, ...locked];
+    renderSidebar({ home, mixes, mine, locked });
+    renderHomeTiles(mine);
   } catch (e) {
     toast(e.message, true, 6000);
   }
 }
 
-function renderSources({ mixes, mine, locked }) {
+function renderSidebar({ home, mixes, mine, locked }) {
   const nav = $('sourceList');
   nav.innerHTML = '';
+  nav.appendChild(sourceRow(home));
 
   const addGroup = (label, items) => {
     if (!items.length) return;
@@ -140,12 +174,13 @@ function renderSources({ mixes, mine, locked }) {
 
   if (locked.length) {
     const note = document.createElement('div');
-    note.className = 'groupLabel';
-    note.style.letterSpacing = '0';
-    note.style.textTransform = 'none';
+    note.className = 'groupNote';
     note.textContent = 'Spotify only lets personal apps read playlists you own. Copy a locked playlist’s tracks into one of yours to shuffle it.';
     nav.appendChild(note);
   }
+
+  const homeEl = document.querySelector('.source[data-key="home"]');
+  if (homeEl && selectedKey === null) homeEl.classList.add('selected');
 }
 
 function sourceRow(s) {
@@ -156,24 +191,81 @@ function sourceRow(s) {
   else if (s.hint) div.title = s.hint;
   else if (s.owner) div.title = `by ${s.owner}`;
 
-  const icon = document.createElement('span');
-  icon.className = 'icon';
-  icon.textContent = s.icon;
+  let icon;
+  if (s.imageSmall && !s.locked) {
+    icon = document.createElement('img');
+    icon.src = s.imageSmall;
+    icon.loading = 'lazy';
+  } else {
+    icon = document.createElement('span');
+    icon.textContent = s.icon;
+  }
+  icon.classList.add('icon');
+
   const name = document.createElement('span');
   name.className = 'name';
   name.textContent = s.name;
   const count = document.createElement('span');
   count.className = 'count';
-  count.textContent = s.count;
+  count.textContent = s.count || '';
 
   div.append(icon, name, count);
-  if (!s.locked) div.addEventListener('click', () => selectSource(s));
+  if (s.type === 'home') div.addEventListener('click', () => mainView('home'));
+  else if (!s.locked) div.addEventListener('click', () => selectSource(s));
   return div;
 }
 
-// one click = load + shuffle
+function renderHomeTiles(mine) {
+  const grid = $('tileGrid');
+  grid.innerHTML = '';
+
+  const tiles = [
+    { emoji: '💚', name: 'Liked Songs', meta: 'your saved tracks', onClick: () => selectSource(sources.find((s) => s.key === 'liked')) },
+    ...mine.map((p) => ({
+      image: p.imageLarge,
+      emoji: '♪',
+      name: p.name,
+      meta: p.count ? `${p.count} tracks` : '',
+      onClick: () => selectSource(p),
+    })),
+  ];
+
+  for (const t of tiles) {
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+
+    if (t.image) {
+      const img = document.createElement('img');
+      img.className = 'tileArt';
+      img.src = t.image;
+      img.loading = 'lazy';
+      tile.appendChild(img);
+    } else {
+      const ph = document.createElement('div');
+      ph.className = 'tileArt emoji';
+      ph.textContent = t.emoji;
+      tile.appendChild(ph);
+    }
+
+    const name = document.createElement('div');
+    name.className = 'tileName';
+    name.textContent = t.name;
+    const meta = document.createElement('div');
+    meta.className = 'tileMeta';
+    meta.textContent = t.meta;
+    tile.append(name, meta);
+    tile.addEventListener('click', t.onClick);
+    grid.appendChild(tile);
+  }
+}
+
+$('heroEverything').addEventListener('click', () => {
+  selectSource(sources.find((s) => s.key === 'library'));
+});
+
+// ---------- select source: one click = load + shuffle ----------
 async function selectSource(src) {
-  if (loading) return;
+  if (!src || loading) return;
   selectedKey = src.key;
   document.querySelectorAll('.source').forEach((el) => {
     el.classList.toggle('selected', el.dataset.key === src.key);
@@ -182,7 +274,12 @@ async function selectSource(src) {
   sourceLabel = src.name;
   $('srcTitle').textContent = src.name;
   $('srcMeta').textContent = '';
-  trackView('loading');
+
+  const cover = $('srcCover');
+  cover.style.backgroundImage = src.imageLarge ? `url("${src.imageLarge}")` : '';
+  cover.textContent = src.imageLarge ? '' : (src.icon === '♪' ? '🎵' : src.icon || '🎵');
+
+  mainView('loading');
   $('loadingMsg').textContent = 'Loading…';
   setActionsEnabled(false);
 
@@ -190,18 +287,18 @@ async function selectSource(src) {
     const res = await invoke('data:tracks', { type: src.type, id: src.id, label: `"${src.name}"` });
     rawTracks = res.tracks;
     if (!rawTracks.length) {
-      trackView('empty');
-      $('srcMeta').textContent = 'no tracks found';
+      mainView('home');
       toast('No tracks found in that selection.', true);
       return;
     }
-    let meta = `${rawTracks.length} tracks · truly random order`;
+    const total = fmtTotal(rawTracks);
+    let meta = `${rawTracks.length} tracks${total ? ' · ' + total : ''} · truly random order`;
     if (res.skipped && res.skipped.length) meta += ` · skipped ${res.skipped.length} unreadable`;
     $('srcMeta').textContent = meta;
     reshuffle();
     setActionsEnabled(true);
   } catch (e) {
-    trackView('empty');
+    mainView('home');
     toast(e.message, true, 6000);
   }
 }
@@ -218,30 +315,55 @@ function reshuffle() {
   const list = $('trackList');
   list.innerHTML = '';
   const frag = document.createDocumentFragment();
+
   shuffled.slice(0, MAX_RENDER).forEach((t, i) => {
     const row = document.createElement('div');
     row.className = 'trackRow';
+
     const n = document.createElement('span');
     n.className = 'n';
     n.textContent = i + 1;
-    const title = document.createElement('span');
+
+    let art;
+    if (t.art) {
+      art = document.createElement('img');
+      art.className = 'trackArt';
+      art.src = t.art;
+      art.loading = 'lazy';
+    } else {
+      art = document.createElement('div');
+      art.className = 'trackArt ph';
+      art.textContent = '♪';
+    }
+
+    const text = document.createElement('div');
+    text.className = 'trackText';
+    const title = document.createElement('div');
     title.className = 't';
     title.textContent = t.name;
-    const artist = document.createElement('span');
+    const artist = document.createElement('div');
     artist.className = 'a';
     artist.textContent = t.artist;
-    row.append(n, title, artist);
+    text.append(title, artist);
+
+    const dur = document.createElement('span');
+    dur.className = 'd';
+    dur.textContent = fmtDuration(t.durationMs);
+
+    row.append(n, art, text, dur);
     frag.appendChild(row);
   });
+
   if (shuffled.length > MAX_RENDER) {
     const row = document.createElement('div');
     row.className = 'trackRow more';
     row.textContent = `… and ${shuffled.length - MAX_RENDER} more, all shuffled`;
     frag.appendChild(row);
   }
+
   list.appendChild(frag);
   list.scrollTop = 0;
-  trackView('list');
+  mainView('list');
 }
 
 $('reshuffleBtn').addEventListener('click', reshuffle);
