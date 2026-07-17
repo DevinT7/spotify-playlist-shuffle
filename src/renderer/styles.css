@@ -309,8 +309,70 @@ button:disabled { opacity: 0.45; cursor: default; }
   border-top: 1px solid var(--border);
   background: var(--side);
 }
-.deviceGroup { display: flex; align-items: center; gap: 6px; width: 300px; max-width: 40%; }
-.deviceGroup select { flex: 1; }
+/* ═══ Custom dropdown ═══ */
+.dropdown { position: relative; width: 300px; max-width: 40%; }
+
+.dropBtn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  background: #0a100c;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 9px 12px;
+  text-align: left;
+}
+.dropBtn:hover { border-color: var(--accent-dim); }
+.dropdown.open .dropBtn { border-color: var(--accent-dim); }
+.dropIcon { flex: none; font-size: 14px; }
+.dropLabel { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chev { flex: none; color: var(--dim); font-size: 11px; transition: transform 0.15s; transform: rotate(180deg); }
+.dropdown.open .chev { transform: rotate(0deg); }
+
+.dropMenu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 100%;
+  max-width: 380px;
+  background: #121a15;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 12px 40px #000c;
+  z-index: 15;
+}
+
+.dropItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dropItem:hover { background: var(--raise2); }
+.dropItem .di { flex: none; width: 18px; text-align: center; }
+.dropItem .dn { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.dropItem .live { flex: none; font-size: 10px; color: var(--accent); }
+.dropItem .tick { flex: none; color: var(--accent); font-weight: 700; }
+.dropItem.disabled { color: var(--dim); cursor: default; }
+.dropItem.disabled:hover { background: none; }
+
+.dropHead {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: #55685c;
+  padding: 6px 11px 4px;
+}
 
 /* ═══ Modals ═══ */
 .modalWrap {

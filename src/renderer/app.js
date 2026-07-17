@@ -370,24 +370,113 @@ $('reshuffleBtn').addEventListener('click', reshuffle);
 $('spaceArtists').addEventListener('change', () => rawTracks.length && reshuffle());
 
 // ---------- devices + play ----------
+let selectedDeviceId = null;
+let deviceList = [];
+
+function deviceIcon(type) {
+  const t = String(type || '').toLowerCase();
+  if (t === 'computer') return '💻';
+  if (t === 'smartphone' || t === 'tablet') return '📱';
+  if (t.includes('speaker') || t.includes('audio') || t.includes('avr')) return '🔊';
+  if (t.includes('tv') || t.includes('cast')) return '📺';
+  return '🎵';
+}
+
+function setDeviceLabel(d) {
+  if (d) {
+    selectedDeviceId = d.id;
+    $('deviceIcon').textContent = deviceIcon(d.type);
+    $('deviceLabel').textContent = d.name;
+  } else {
+    selectedDeviceId = null;
+    $('deviceIcon').textContent = '🔊';
+    $('deviceLabel').textContent = 'Choose a device';
+  }
+}
+
 async function refreshDevices() {
   try {
     const data = await invoke('player:devices');
-    const sel = $('deviceSelect');
-    sel.innerHTML = '';
-    const devices = (data && data.devices) || [];
-    if (!devices.length) {
-      sel.appendChild(new Option('no devices — open Spotify somewhere', ''));
-    } else {
-      devices.forEach((d) => {
-        const opt = new Option(`${d.name}${d.is_active ? ' · active' : ''}`, d.id);
-        if (d.is_active) opt.selected = true;
-        sel.appendChild(opt);
-      });
-    }
+    deviceList = (data && data.devices) || [];
+    // keep current selection if it still exists; otherwise prefer the active device
+    const current = deviceList.find((d) => d.id === selectedDeviceId);
+    setDeviceLabel(current || deviceList.find((d) => d.is_active) || deviceList[0] || null);
   } catch { /* best-effort */ }
+  renderDeviceMenu();
 }
-$('refreshDevices').addEventListener('click', refreshDevices);
+
+function renderDeviceMenu() {
+  const menu = $('deviceMenu');
+  menu.innerHTML = '';
+
+  const head = document.createElement('div');
+  head.className = 'dropHead';
+  head.textContent = 'PLAY ON';
+  menu.appendChild(head);
+
+  if (!deviceList.length) {
+    const item = document.createElement('div');
+    item.className = 'dropItem disabled';
+    item.textContent = 'No devices — open Spotify on your Mac, phone, or speaker';
+    menu.appendChild(item);
+    return;
+  }
+
+  for (const d of deviceList) {
+    const item = document.createElement('div');
+    item.className = 'dropItem';
+
+    const di = document.createElement('span');
+    di.className = 'di';
+    di.textContent = deviceIcon(d.type);
+    const dn = document.createElement('span');
+    dn.className = 'dn';
+    dn.textContent = d.name;
+    item.append(di, dn);
+
+    if (d.is_active) {
+      const live = document.createElement('span');
+      live.className = 'live';
+      live.textContent = '● playing here';
+      item.appendChild(live);
+    }
+    if (d.id === selectedDeviceId) {
+      const tick = document.createElement('span');
+      tick.className = 'tick';
+      tick.textContent = '✓';
+      item.appendChild(tick);
+    }
+
+    item.addEventListener('click', () => {
+      setDeviceLabel(d);
+      closeDeviceMenu();
+    });
+    menu.appendChild(item);
+  }
+}
+
+function closeDeviceMenu() {
+  $('deviceDropdown').classList.remove('open');
+  $('deviceMenu').classList.add('hidden');
+}
+
+$('deviceBtn').addEventListener('click', async (e) => {
+  e.stopPropagation();
+  const dd = $('deviceDropdown');
+  const isOpen = dd.classList.contains('open');
+  if (isOpen) {
+    closeDeviceMenu();
+    return;
+  }
+  dd.classList.add('open');
+  $('deviceMenu').classList.remove('hidden');
+  renderDeviceMenu(); // show what we have instantly…
+  await refreshDevices(); // …then refresh live in the background
+});
+
+document.addEventListener('click', (e) => {
+  if (!$('deviceDropdown').contains(e.target)) closeDeviceMenu();
+});
 
 $('playBtn').addEventListener('click', async () => {
   const btn = $('playBtn');
@@ -396,7 +485,7 @@ $('playBtn').addEventListener('click', async () => {
   try {
     const { count } = await invoke('player:play', {
       uris: shuffled.map((t) => t.uri),
-      deviceId: $('deviceSelect').value || null,
+      deviceId: selectedDeviceId,
     });
     toast(`▶ Playing ${count} tracks in truly random order`);
   } catch (e) {
@@ -468,7 +557,10 @@ document.querySelectorAll('.modalWrap').forEach((wrap) => {
   });
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') document.querySelectorAll('.modalWrap').forEach((w) => w.classList.add('hidden'));
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modalWrap').forEach((w) => w.classList.add('hidden'));
+    closeDeviceMenu();
+  }
   if (e.key === 'Enter' && !$('saveModal').classList.contains('hidden')) $('saveConfirmBtn').click();
 });
 

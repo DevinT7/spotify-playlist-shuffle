@@ -97,9 +97,13 @@
 
       <!-- ── Bottom action bar ── -->
       <footer id="bottomBar">
-        <div class="deviceGroup">
-          <select id="deviceSelect" title="Where to play"></select>
-          <button id="refreshDevices" class="iconBtn" title="Refresh devices">↻</button>
+        <div class="dropdown" id="deviceDropdown">
+          <button class="dropBtn" id="deviceBtn" title="Where to play">
+            <span class="dropIcon" id="deviceIcon">🔊</span>
+            <span class="dropLabel" id="deviceLabel">Choose a device</span>
+            <span class="chev">⌃</span>
+          </button>
+          <div class="dropMenu hidden" id="deviceMenu"></div>
         </div>
         <div class="grow"></div>
         <button id="saveBtn" class="ghost" disabled>Save as playlist…</button>
