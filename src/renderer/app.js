@@ -1,17 +1,14 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
 
-let sources = [];        // [{type, id, name, meta, locked, icon}]
-let selected = null;
+const MAX_RENDER = 500;
+
+let sources = [];
+let selectedKey = null;
 let rawTracks = [];
 let shuffled = [];
 let sourceLabel = '';
-
-const setStatus = (id, msg, cls = '') => {
-  const el = $(id);
-  el.textContent = msg || '';
-  el.className = 'status' + (cls ? ' ' + cls : '');
-};
+let loading = false;
 
 const invoke = async (channel, args) => {
   const res = await window.api.invoke(channel, args);
@@ -19,163 +16,236 @@ const invoke = async (channel, args) => {
   return res.data;
 };
 
-window.api.onProgress((msg) => setStatus('sourceStatus', msg));
+// ---------- toast ----------
+let toastTimer = null;
+function toast(msg, isErr = false, ms = 3500) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.className = isErr ? 'err' : '';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), ms);
+}
 
-// ---------- connect ----------
+const setStatus = (id, msg, cls = '') => {
+  const el = $(id);
+  el.textContent = msg || '';
+  el.className = 'status' + (cls ? ' ' + cls : '');
+};
+
+window.api.onProgress((msg) => {
+  if (loading) $('loadingMsg').textContent = msg;
+});
+
+// ---------- view switching ----------
+function show(view) {
+  $('onboarding').classList.toggle('hidden', view !== 'onboarding');
+  $('app').classList.toggle('hidden', view !== 'app');
+}
+
+function trackView(state) {
+  $('emptyState').classList.toggle('hidden', state !== 'empty');
+  $('loadingState').classList.toggle('hidden', state !== 'loading');
+  $('trackList').classList.toggle('hidden', state !== 'list');
+  loading = state === 'loading';
+}
+
+// ---------- init ----------
 async function init() {
   const s = await invoke('settings:get');
-  $('clientId').value = s.clientId;
-  $('redirectUri').value = s.redirectUri;
+  for (const id of ['obClientId', 'clientId']) $(id).value = s.clientId;
+  for (const id of ['obRedirectUri', 'redirectUri']) $(id).value = s.redirectUri;
 
   const st = await invoke('auth:status');
-  if (st.connected) onConnected(st.user);
+  if (st.connected) {
+    enterApp(st.user);
+  } else {
+    show('onboarding');
+  }
 }
 
-function onConnected(user) {
-  $('connectBadge').textContent = '✓';
-  $('connectBadge').classList.add('ok');
-  $('logoutBtn').classList.remove('hidden');
-  $('connectBtn').textContent = 'Reconnect';
-  setStatus('connectStatus', `Connected as ${user}.`, 'ok');
-  loadSources();
+async function enterApp(user) {
+  show('app');
+  $('userBox').textContent = `Connected as ${user}`;
+  trackView('empty');
+  refreshDevices();
+  await loadSources();
 }
 
-$('connectBtn').addEventListener('click', async () => {
-  const btn = $('connectBtn');
+// ---------- connect (onboarding) ----------
+$('obConnectBtn').addEventListener('click', async () => {
+  const btn = $('obConnectBtn');
   btn.disabled = true;
   try {
     await invoke('settings:set', {
-      clientId: $('clientId').value,
-      redirectUri: $('redirectUri').value,
+      clientId: $('obClientId').value,
+      redirectUri: $('obRedirectUri').value,
     });
-    setStatus('connectStatus', 'Waiting for you to approve in the browser…');
+    setStatus('obStatus', 'Approve the request in your browser…');
     const { user } = await invoke('auth:connect');
-    onConnected(user);
+    setStatus('obStatus', '');
+    enterApp(user);
   } catch (e) {
-    setStatus('connectStatus', e.message, 'err');
+    setStatus('obStatus', e.message, 'err');
   } finally {
     btn.disabled = false;
   }
 });
 
-$('logoutBtn').addEventListener('click', async () => {
-  await invoke('auth:logout');
-  location.reload();
-});
-
-// ---------- sources ----------
+// ---------- sidebar sources ----------
 async function loadSources() {
-  setStatus('sourceStatus', 'Loading your playlists…');
-  $('sourceCard').classList.remove('hidden');
   try {
     const { playlists } = await invoke('data:playlists');
-    sources = [
-      { type: 'library', id: null, name: 'Everything (DJ replacement)', meta: 'liked songs + all your playlists, deduped', icon: '🎧', locked: false },
-      { type: 'liked', id: null, name: 'Liked Songs', meta: '', icon: '💚', locked: false },
-      ...playlists.map((p) => ({
+    const mixes = [
+      { key: 'library', type: 'library', id: null, name: 'Everything', icon: '🎧', count: '', locked: false, hint: 'liked songs + all your playlists, deduped' },
+      { key: 'liked', type: 'liked', id: null, name: 'Liked Songs', icon: '💚', count: '', locked: false },
+    ];
+    const mine = [];
+    const locked = [];
+    for (const p of playlists) {
+      const item = {
+        key: 'pl:' + p.id,
         type: 'playlist',
         id: p.id,
         name: p.name,
-        meta: `by ${p.owner}${p.total != null ? ' · ' + p.total + ' tracks' : ''}`,
-        icon: p.readable ? '🎵' : '🔒',
+        icon: p.readable ? '♪' : '🔒',
+        count: p.total != null ? String(p.total) : '',
         locked: !p.readable,
-      })),
-    ];
-    renderSources();
-    const lockedCount = playlists.filter((p) => !p.readable).length;
-    $('lockedHint').textContent = lockedCount
-      ? `🔒 ${lockedCount} playlist(s) are locked: since Feb 2026, Spotify only lets personal apps read playlists you own or collaborate on. Workaround: select-all in that playlist in Spotify and copy the tracks into a playlist of your own.`
-      : '';
-    setStatus('sourceStatus', '');
-  } catch (e) {
-    setStatus('sourceStatus', e.message, 'err');
-  }
-}
-
-function renderSources() {
-  const list = $('sourceList');
-  list.innerHTML = '';
-  sources.forEach((s, i) => {
-    const div = document.createElement('div');
-    div.className = 'source' + (s.locked ? ' locked' : '') + (selected === i ? ' selected' : '');
-    div.title = s.locked ? 'Not readable by personal apps (Spotify Feb 2026 policy)' : '';
-
-    const icon = document.createElement('span');
-    icon.className = 'icon';
-    icon.textContent = s.icon;
-    const name = document.createElement('span');
-    name.textContent = s.name;
-    const meta = document.createElement('span');
-    meta.className = 'meta';
-    meta.textContent = s.meta;
-
-    div.append(icon, name, meta);
-    if (!s.locked) {
-      div.addEventListener('click', () => {
-        selected = i;
-        renderSources();
-      });
+        owner: p.owner,
+      };
+      (p.readable ? mine : locked).push(item);
     }
-    list.appendChild(div);
-  });
+    sources = [...mixes, ...mine, ...locked];
+    renderSources({ mixes, mine, locked });
+  } catch (e) {
+    toast(e.message, true, 6000);
+  }
 }
 
-// ---------- load + shuffle ----------
-$('loadBtn').addEventListener('click', async () => {
-  if (selected == null) {
-    setStatus('sourceStatus', 'Pick a source first.', 'err');
-    return;
+function renderSources({ mixes, mine, locked }) {
+  const nav = $('sourceList');
+  nav.innerHTML = '';
+
+  const addGroup = (label, items) => {
+    if (!items.length) return;
+    const g = document.createElement('div');
+    g.className = 'groupLabel';
+    g.textContent = label;
+    nav.appendChild(g);
+    items.forEach((s) => nav.appendChild(sourceRow(s)));
+  };
+
+  addGroup('SHUFFLE', mixes);
+  addGroup('YOUR PLAYLISTS', mine);
+  addGroup('LOCKED BY SPOTIFY', locked);
+
+  if (locked.length) {
+    const note = document.createElement('div');
+    note.className = 'groupLabel';
+    note.style.letterSpacing = '0';
+    note.style.textTransform = 'none';
+    note.textContent = 'Spotify only lets personal apps read playlists you own. Copy a locked playlist’s tracks into one of yours to shuffle it.';
+    nav.appendChild(note);
   }
-  const src = sources[selected];
-  const btn = $('loadBtn');
-  btn.disabled = true;
+}
+
+function sourceRow(s) {
+  const div = document.createElement('div');
+  div.className = 'source' + (s.locked ? ' locked' : '') + (selectedKey === s.key ? ' selected' : '');
+  div.dataset.key = s.key;
+  if (s.locked) div.title = 'Not readable by personal apps (Spotify Feb 2026 policy)';
+  else if (s.hint) div.title = s.hint;
+  else if (s.owner) div.title = `by ${s.owner}`;
+
+  const icon = document.createElement('span');
+  icon.className = 'icon';
+  icon.textContent = s.icon;
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = s.name;
+  const count = document.createElement('span');
+  count.className = 'count';
+  count.textContent = s.count;
+
+  div.append(icon, name, count);
+  if (!s.locked) div.addEventListener('click', () => selectSource(s));
+  return div;
+}
+
+// one click = load + shuffle
+async function selectSource(src) {
+  if (loading) return;
+  selectedKey = src.key;
+  document.querySelectorAll('.source').forEach((el) => {
+    el.classList.toggle('selected', el.dataset.key === src.key);
+  });
+
+  sourceLabel = src.name;
+  $('srcTitle').textContent = src.name;
+  $('srcMeta').textContent = '';
+  trackView('loading');
+  $('loadingMsg').textContent = 'Loading…';
+  setActionsEnabled(false);
+
   try {
     const res = await invoke('data:tracks', { type: src.type, id: src.id, label: `"${src.name}"` });
     rawTracks = res.tracks;
-    sourceLabel = src.name;
     if (!rawTracks.length) {
-      setStatus('sourceStatus', 'No tracks found in that selection.', 'err');
+      trackView('empty');
+      $('srcMeta').textContent = 'no tracks found';
+      toast('No tracks found in that selection.', true);
       return;
     }
-    let msg = `Loaded ${rawTracks.length} tracks from "${src.name}".`;
-    if (res.skipped && res.skipped.length) msg += ` (skipped: ${res.skipped.join(', ')})`;
-    setStatus('sourceStatus', msg, 'ok');
+    let meta = `${rawTracks.length} tracks · truly random order`;
+    if (res.skipped && res.skipped.length) meta += ` · skipped ${res.skipped.length} unreadable`;
+    $('srcMeta').textContent = meta;
     reshuffle();
-    $('reshuffleBtn').classList.remove('hidden');
-    $('resultCard').classList.remove('hidden');
-    $('playlistName').value = `${src.name} — true shuffle`;
-    refreshDevices();
+    setActionsEnabled(true);
   } catch (e) {
-    setStatus('sourceStatus', e.message, 'err');
-  } finally {
-    btn.disabled = false;
+    trackView('empty');
+    toast(e.message, true, 6000);
   }
-});
+}
+
+function setActionsEnabled(on) {
+  $('playBtn').disabled = !on;
+  $('saveBtn').disabled = !on;
+  $('reshuffleBtn').disabled = !on;
+}
+
+// ---------- shuffle + render ----------
+function reshuffle() {
+  shuffled = window.api.shuffle(rawTracks, { avoidRepeatArtists: $('spaceArtists').checked });
+  const list = $('trackList');
+  list.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  shuffled.slice(0, MAX_RENDER).forEach((t, i) => {
+    const row = document.createElement('div');
+    row.className = 'trackRow';
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = i + 1;
+    const title = document.createElement('span');
+    title.className = 't';
+    title.textContent = t.name;
+    const artist = document.createElement('span');
+    artist.className = 'a';
+    artist.textContent = t.artist;
+    row.append(n, title, artist);
+    frag.appendChild(row);
+  });
+  if (shuffled.length > MAX_RENDER) {
+    const row = document.createElement('div');
+    row.className = 'trackRow more';
+    row.textContent = `… and ${shuffled.length - MAX_RENDER} more, all shuffled`;
+    frag.appendChild(row);
+  }
+  list.appendChild(frag);
+  list.scrollTop = 0;
+  trackView('list');
+}
 
 $('reshuffleBtn').addEventListener('click', reshuffle);
 $('spaceArtists').addEventListener('change', () => rawTracks.length && reshuffle());
-
-function reshuffle() {
-  shuffled = window.api.shuffle(rawTracks, { avoidRepeatArtists: $('spaceArtists').checked });
-  $('resultSummary').textContent = `${shuffled.length} tracks · truly random order`;
-  const ol = $('preview');
-  ol.innerHTML = '';
-  shuffled.slice(0, 25).forEach((t) => {
-    const li = document.createElement('li');
-    const name = document.createElement('span');
-    name.className = 't';
-    name.textContent = t.name;
-    li.appendChild(name);
-    li.appendChild(document.createTextNode(` — ${t.artist}`));
-    ol.appendChild(li);
-  });
-  if (shuffled.length > 25) {
-    const li = document.createElement('li');
-    li.textContent = `… and ${shuffled.length - 25} more`;
-    ol.appendChild(li);
-  }
-  setStatus('resultStatus', '');
-}
 
 // ---------- devices + play ----------
 async function refreshDevices() {
@@ -187,47 +257,100 @@ async function refreshDevices() {
     if (!devices.length) {
       sel.appendChild(new Option('no devices — open Spotify somewhere', ''));
     } else {
-      devices.forEach((d) =>
-        sel.appendChild(new Option(`${d.name}${d.is_active ? ' (active)' : ''}`, d.id))
-      );
+      devices.forEach((d) => {
+        const opt = new Option(`${d.name}${d.is_active ? ' · active' : ''}`, d.id);
+        if (d.is_active) opt.selected = true;
+        sel.appendChild(opt);
+      });
     }
-  } catch { /* device list is best-effort */ }
+  } catch { /* best-effort */ }
 }
 $('refreshDevices').addEventListener('click', refreshDevices);
 
 $('playBtn').addEventListener('click', async () => {
   const btn = $('playBtn');
   btn.disabled = true;
+  btn.textContent = 'Starting…';
   try {
     const { count } = await invoke('player:play', {
       uris: shuffled.map((t) => t.uri),
       deviceId: $('deviceSelect').value || null,
     });
-    setStatus('resultStatus', `▶ Playing ${count} tracks in truly random order.`, 'ok');
+    toast(`▶ Playing ${count} tracks in truly random order`);
   } catch (e) {
-    setStatus('resultStatus', e.message, 'err');
+    toast(e.message, true, 6000);
   } finally {
     btn.disabled = false;
+    btn.textContent = '▶ Play Now';
   }
 });
 
-// ---------- save ----------
-$('saveBtn').addEventListener('click', async () => {
-  const btn = $('saveBtn');
+// ---------- save modal ----------
+$('saveBtn').addEventListener('click', () => {
+  $('playlistName').value = `${sourceLabel} — true shuffle`;
+  $('saveModal').classList.remove('hidden');
+  $('playlistName').focus();
+});
+
+$('saveConfirmBtn').addEventListener('click', async () => {
+  const btn = $('saveConfirmBtn');
   btn.disabled = true;
   try {
     const name = $('playlistName').value.trim() || `${sourceLabel} — true shuffle`;
-    const { url, count } = await invoke('playlist:save', {
-      name,
-      uris: shuffled.map((t) => t.uri),
-    });
-    setStatus('resultStatus', `Saved "${name}" (${count} tracks). Play it with shuffle OFF.`, 'ok');
+    const { url, count } = await invoke('playlist:save', { name, uris: shuffled.map((t) => t.uri) });
+    $('saveModal').classList.add('hidden');
+    toast(`Saved "${name}" (${count} tracks). Play it with shuffle OFF.`, false, 5000);
     if (url) invoke('shell:open', url);
   } catch (e) {
-    setStatus('resultStatus', e.message, 'err');
+    toast(e.message, true, 6000);
   } finally {
     btn.disabled = false;
   }
 });
 
-init().catch((e) => setStatus('connectStatus', e.message, 'err'));
+// ---------- settings modal ----------
+$('settingsBtn').addEventListener('click', () => {
+  setStatus('settingsStatus', '');
+  $('settingsModal').classList.remove('hidden');
+});
+
+$('settingsSaveBtn').addEventListener('click', async () => {
+  const btn = $('settingsSaveBtn');
+  btn.disabled = true;
+  try {
+    await invoke('settings:set', {
+      clientId: $('clientId').value,
+      redirectUri: $('redirectUri').value,
+    });
+    setStatus('settingsStatus', 'Approve the request in your browser…');
+    const { user } = await invoke('auth:connect');
+    $('settingsModal').classList.add('hidden');
+    enterApp(user);
+    toast(`Connected as ${user}`);
+  } catch (e) {
+    setStatus('settingsStatus', e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('logoutBtn').addEventListener('click', async () => {
+  await invoke('auth:logout');
+  location.reload();
+});
+
+// close modals on backdrop / cancel / Escape
+document.querySelectorAll('.modalWrap').forEach((wrap) => {
+  wrap.addEventListener('click', (e) => {
+    if (e.target === wrap || e.target.hasAttribute('data-close')) wrap.classList.add('hidden');
+  });
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') document.querySelectorAll('.modalWrap').forEach((w) => w.classList.add('hidden'));
+  if (e.key === 'Enter' && !$('saveModal').classList.contains('hidden')) $('saveConfirmBtn').click();
+});
+
+init().catch((e) => {
+  show('onboarding');
+  setStatus('obStatus', e.message, 'err');
+});

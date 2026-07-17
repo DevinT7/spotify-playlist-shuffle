@@ -17,12 +17,15 @@ const spotify = new Spotify(auth, sendProgress);
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 980,
-    height: 820,
-    minWidth: 720,
-    minHeight: 600,
+    width: 1060,
+    height: 700,
+    minWidth: 860,
+    minHeight: 560,
     backgroundColor: '#0b0f0d',
     title: 'True Shuffle',
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 14 } }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,

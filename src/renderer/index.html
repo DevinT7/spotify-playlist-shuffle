@@ -7,84 +7,123 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <main>
-    <header>
-      <div class="kicker">// FISHER-YATES, NOT SPOTIFY'S WEIGHTED SHUFFLE</div>
+
+  <!-- ═══ First-run / connect screen ═══ -->
+  <div id="onboarding" class="hidden">
+    <div class="obDrag"></div>
+    <div class="obPanel">
+      <div class="obDice">🎲</div>
       <h1>True Shuffle</h1>
-      <p class="sub">
-        Spotify's shuffle and DJ are weighted, not random. This pulls your music,
-        shuffles it with an unbiased algorithm, and either plays it instantly or
-        saves it as a playlist — in truly random order.
-      </p>
-    </header>
+      <p class="obSub">Actually random Spotify shuffle. Connect once and you're set.</p>
 
-    <!-- 1 · Connect -->
-    <section class="card" id="connectCard">
-      <div class="cardTitle"><span class="badge" id="connectBadge">1</span> CONNECT</div>
-      <div class="field">
-        <label for="clientId">Client ID</label>
-        <input id="clientId" spellcheck="false" placeholder="from developer.spotify.com/dashboard" />
+      <label for="obClientId">Spotify Client ID</label>
+      <input id="obClientId" spellcheck="false" placeholder="from developer.spotify.com/dashboard" />
+
+      <label for="obRedirectUri">Redirect URI <span class="dim">(must match the dashboard exactly)</span></label>
+      <input id="obRedirectUri" spellcheck="false" />
+
+      <button id="obConnectBtn" class="primary big">Connect Spotify</button>
+      <div class="status" id="obStatus"></div>
+
+      <details class="obHelp">
+        <summary>Where do I get these?</summary>
+        <p>
+          <a href="https://developer.spotify.com/dashboard" target="_blank">developer.spotify.com/dashboard</a>
+          → your app → Settings. Copy the <b>Client ID</b>, and make sure the Redirect URI above is listed
+          under <b>Redirect URIs</b> (any <code>http://127.0.0.1:8888/…</code> path works).
+        </p>
+      </details>
+    </div>
+  </div>
+
+  <!-- ═══ Main app ═══ -->
+  <div id="app" class="hidden">
+    <aside id="sidebar">
+      <div class="sideDrag"></div>
+      <div class="sideBrand">🎲 True Shuffle</div>
+      <nav id="sourceList"></nav>
+      <div class="sideFooter">
+        <div id="userBox" class="user"></div>
+        <button id="settingsBtn" class="iconBtn" title="Settings">⚙</button>
       </div>
-      <div class="field">
-        <label for="redirectUri">Redirect URI (must match the dashboard exactly)</label>
-        <input id="redirectUri" spellcheck="false" />
-        <div class="hint">
-          Any <code>http://127.0.0.1:PORT/anything</code> works — the app catches the redirect
-          itself, no browser page needed. Add it under your app's Redirect URIs in the
-          <a href="https://developer.spotify.com/dashboard" target="_blank">Spotify dashboard</a>.
+    </aside>
+
+    <section id="main">
+      <!-- header -->
+      <header id="mainHeader">
+        <div class="headText">
+          <div id="srcTitle">Pick something to shuffle</div>
+          <div id="srcMeta" class="dim"></div>
         </div>
-      </div>
-      <div class="row">
-        <button id="connectBtn" class="primary">Connect Spotify</button>
-        <button id="logoutBtn" class="ghost hidden">Disconnect</button>
-      </div>
-      <div class="status" id="connectStatus"></div>
-    </section>
-
-    <!-- 2 · Source -->
-    <section class="card hidden" id="sourceCard">
-      <div class="cardTitle"><span class="badge">2</span> PICK WHAT TO SHUFFLE</div>
-      <div id="sourceList" class="sourceList"></div>
-      <div class="hint" id="lockedHint"></div>
-      <label class="check">
-        <input type="checkbox" id="spaceArtists" checked />
-        avoid the same artist twice in a row
-      </label>
-      <div class="row">
-        <button id="loadBtn" class="primary">Load &amp; Shuffle</button>
-        <button id="reshuffleBtn" class="ghost hidden">Re-shuffle</button>
-      </div>
-      <div class="status" id="sourceStatus"></div>
-    </section>
-
-    <!-- 3 · Result -->
-    <section class="card hidden" id="resultCard">
-      <div class="cardTitle"><span class="badge">3</span> RESULT</div>
-      <div id="resultSummary" class="summary"></div>
-      <ol id="preview" class="preview"></ol>
-
-      <div class="actionBlock">
-        <div class="actionTitle">▶ Play instantly (Premium)</div>
-        <div class="row">
-          <select id="deviceSelect"></select>
-          <button id="refreshDevices" class="ghost">↻ devices</button>
-          <button id="playBtn" class="primary">Play Now</button>
+        <div class="headActions">
+          <label class="toggle" title="Avoid the same artist twice in a row">
+            <input type="checkbox" id="spaceArtists" checked />
+            <span>space artists</span>
+          </label>
+          <button id="reshuffleBtn" class="ghost" disabled>↻ Re-shuffle</button>
         </div>
-        <div class="hint">Writes the order to a hidden "🎲 True Shuffle Queue" playlist and plays it with Spotify's shuffle forced OFF.</div>
-      </div>
+      </header>
 
-      <div class="actionBlock">
-        <div class="actionTitle">💾 Save as a new playlist</div>
-        <div class="row">
-          <input id="playlistName" placeholder="playlist name" />
-          <button id="saveBtn" class="primary">Save Playlist</button>
+      <!-- track area -->
+      <div id="trackArea">
+        <div id="emptyState">
+          <div class="esDice">🎲</div>
+          <div class="esTitle">Choose a source on the left</div>
+          <div class="esSub dim">It loads and shuffles automatically — then press play.</div>
         </div>
+        <div id="loadingState" class="hidden">
+          <div class="spinner"></div>
+          <div id="loadingMsg" class="dim">Loading…</div>
+        </div>
+        <div id="trackList" class="hidden"></div>
       </div>
-      <div class="status" id="resultStatus"></div>
-    </section>
 
-    <footer>every permutation equally likely · crypto randomness · your data never leaves this app</footer>
-  </main>
+      <!-- bottom action bar -->
+      <footer id="bottomBar">
+        <div class="deviceGroup">
+          <select id="deviceSelect" title="Where to play"></select>
+          <button id="refreshDevices" class="iconBtn" title="Refresh devices">↻</button>
+        </div>
+        <div class="grow"></div>
+        <button id="saveBtn" class="ghost" disabled>Save as playlist…</button>
+        <button id="playBtn" class="primary" disabled>▶ Play Now</button>
+      </footer>
+    </section>
+  </div>
+
+  <!-- ═══ Save modal ═══ -->
+  <div id="saveModal" class="modalWrap hidden">
+    <div class="modal">
+      <h2>Save as playlist</h2>
+      <p class="dim small">Creates a private playlist in this exact random order. Play it with shuffle OFF.</p>
+      <input id="playlistName" spellcheck="false" />
+      <div class="modalRow">
+        <button class="ghost" data-close>Cancel</button>
+        <button id="saveConfirmBtn" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Settings modal ═══ -->
+  <div id="settingsModal" class="modalWrap hidden">
+    <div class="modal">
+      <h2>Settings</h2>
+      <label for="clientId">Spotify Client ID</label>
+      <input id="clientId" spellcheck="false" />
+      <label for="redirectUri">Redirect URI</label>
+      <input id="redirectUri" spellcheck="false" />
+      <div class="modalRow">
+        <button id="logoutBtn" class="danger">Disconnect</button>
+        <div class="grow"></div>
+        <button class="ghost" data-close>Cancel</button>
+        <button id="settingsSaveBtn" class="primary">Save &amp; Reconnect</button>
+      </div>
+      <div class="status" id="settingsStatus"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="hidden"></div>
+
   <script src="app.js"></script>
 </body>
 </html>
