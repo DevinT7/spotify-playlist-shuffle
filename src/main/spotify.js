@@ -11,6 +11,20 @@ const MAX_PLAYLIST = 9900; // Spotify playlist hard cap is 10k
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// walk an object graph looking for a trackList array (embed page JSON)
+function deepFindTrackList(obj) {
+  const stack = [obj];
+  while (stack.length) {
+    const o = stack.pop();
+    if (!o || typeof o !== 'object') continue;
+    if (Array.isArray(o.trackList) && o.trackList.length) return o.trackList;
+    for (const v of Object.values(o)) {
+      if (v && typeof v === 'object') stack.push(v);
+    }
+  }
+  return null;
+}
+
 class Spotify {
   constructor(auth, onProgress = () => {}) {
     this.auth = auth;
@@ -150,6 +164,70 @@ class Spotify {
 
   getDevices() {
     return this.api('/me/player/devices');
+  }
+
+  // Reads a PUBLIC playlist's tracks from Spotify's embed page (open.spotify.com/embed).
+  // The official API refuses to return items of playlists you don't own (Feb 2026
+  // Dev Mode policy), but the embed player data is public. No auth involved.
+  // Note: may only expose the first ~100 tracks of very large playlists.
+  async getPublicPlaylistTracks(id) {
+    const res = await fetch(`https://open.spotify.com/embed/playlist/${encodeURIComponent(id)}`, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        Accept: 'text/html',
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`Could not read the playlist's public page (HTTP ${res.status}). Private playlists can't be copied.`);
+    }
+    const html = await res.text();
+    const m = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+    if (!m) throw new Error("Couldn't parse the playlist's public page — Spotify may have changed its format.");
+
+    let data;
+    try {
+      data = JSON.parse(m[1]);
+    } catch {
+      throw new Error("Couldn't parse the playlist's public page — Spotify may have changed its format.");
+    }
+
+    // usual location, with a deep-search fallback in case the shape shifts
+    let list =
+      data && data.props && data.props.pageProps && data.props.pageProps.state &&
+      data.props.pageProps.state.data && data.props.pageProps.state.data.entity &&
+      data.props.pageProps.state.data.entity.trackList;
+    if (!Array.isArray(list)) list = deepFindTrackList(data);
+    if (!Array.isArray(list) || !list.length) {
+      throw new Error('No tracks found on the public page. The playlist may be private or empty.');
+    }
+
+    return list
+      .filter((t) => t && typeof t.uri === 'string' && t.uri.startsWith('spotify:track:'))
+      .map((t) => ({
+        uri: t.uri,
+        name: t.title || '?',
+        artist: t.subtitle || '',
+        art: null,
+        durationMs: typeof t.duration === 'number' ? t.duration : null,
+      }));
+  }
+
+  // Copies a locked (non-owned, public) playlist into the user's account.
+  async copyLockedPlaylist(id, name, sourceOwner) {
+    this.progress('Reading public playlist data…');
+    const tracks = await this.getPublicPlaylistTracks(id);
+    this.progress(`Found ${tracks.length} tracks — creating your copy…`);
+    const p = await this.createPlaylist(
+      name,
+      `Your copy of "${name}"${sourceOwner ? ` by ${sourceOwner}` : ''} — made by True Shuffle so it can be truly shuffled.`
+    );
+    await this._fillPlaylist(p.id, tracks.map((t) => t.uri));
+    return {
+      id: p.id,
+      url: (p.external_urls && p.external_urls.spotify) || null,
+      count: tracks.length,
+    };
   }
 
   async createPlaylist(name, description) {

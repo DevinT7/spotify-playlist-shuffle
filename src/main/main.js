@@ -97,6 +97,8 @@ handle('player:play', ({ uris, deviceId }) => spotify.playNow(uris, deviceId, se
 
 handle('playlist:save', ({ name, uris }) => spotify.saveAsPlaylist(name, uris));
 
+handle('playlist:copy', ({ id, name, owner }) => spotify.copyLockedPlaylist(id, name, owner));
+
 handle('shell:open', (url) => shell.openExternal(url));
 
 app.whenReady().then(createWindow);

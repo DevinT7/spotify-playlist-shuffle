@@ -175,7 +175,7 @@ function renderSidebar({ home, mixes, mine, locked }) {
   if (locked.length) {
     const note = document.createElement('div');
     note.className = 'groupNote';
-    note.textContent = 'Spotify only lets personal apps read playlists you own. Copy a locked playlist’s tracks into one of yours to shuffle it.';
+    note.textContent = 'Spotify blocks apps from reading playlists you don’t own. Click one to make your own shuffleable copy.';
     nav.appendChild(note);
   }
 
@@ -187,7 +187,7 @@ function sourceRow(s) {
   const div = document.createElement('div');
   div.className = 'source' + (s.locked ? ' locked' : '') + (selectedKey === s.key ? ' selected' : '');
   div.dataset.key = s.key;
-  if (s.locked) div.title = 'Not readable by personal apps (Spotify Feb 2026 policy)';
+  if (s.locked) div.title = 'Locked by Spotify — click to copy it into your account';
   else if (s.hint) div.title = s.hint;
   else if (s.owner) div.title = `by ${s.owner}`;
 
@@ -211,7 +211,8 @@ function sourceRow(s) {
 
   div.append(icon, name, count);
   if (s.type === 'home') div.addEventListener('click', () => mainView('home'));
-  else if (!s.locked) div.addEventListener('click', () => selectSource(s));
+  else if (s.locked) div.addEventListener('click', () => offerCopy(s));
+  else div.addEventListener('click', () => selectSource(s));
   return div;
 }
 
@@ -261,6 +262,55 @@ function renderHomeTiles(mine) {
 
 $('heroEverything').addEventListener('click', () => {
   selectSource(sources.find((s) => s.key === 'library'));
+});
+
+// ---------- copy a locked playlist ----------
+let copyTarget = null;
+
+function offerCopy(src) {
+  copyTarget = src;
+  $('copyTitle').textContent = `Copy "${src.name}"`;
+  $('copyDesc').textContent =
+    `Spotify doesn't let personal apps read playlists you don't own, so this playlist can't be shuffled directly. ` +
+    `True Shuffle can read its public page and create your own copy${src.count ? ` (~${src.count} tracks)` : ''} — ` +
+    `which you own, so it shuffles fine. Only works if the playlist is public.`;
+  $('copyModal').classList.remove('hidden');
+}
+
+$('copyConfirmBtn').addEventListener('click', async () => {
+  if (!copyTarget) return;
+  const src = copyTarget;
+  const btn = $('copyConfirmBtn');
+  btn.disabled = true;
+  $('copyModal').classList.add('hidden');
+
+  $('srcTitle').textContent = `Copying "${src.name}"…`;
+  $('srcMeta').textContent = '';
+  const cover = $('srcCover');
+  cover.style.backgroundImage = src.imageLarge ? `url("${src.imageLarge}")` : '';
+  cover.textContent = src.imageLarge ? '' : '⧉';
+  mainView('loading');
+  $('loadingMsg').textContent = 'Reading public playlist data…';
+
+  try {
+    const { id, count } = await invoke('playlist:copy', { id: src.id, name: src.name, owner: src.owner });
+    const expected = Number(src.count) || null;
+    if (expected && count < expected) {
+      toast(`Copied ${count} of ~${expected} tracks — Spotify's public data only exposes the first ${count}. Add the rest in Spotify if you want them.`, false, 8000);
+    } else {
+      toast(`Copied "${src.name}" (${count} tracks) into your account.`);
+    }
+    await loadSources();
+    const fresh = sources.find((s) => s.key === 'pl:' + id);
+    if (fresh) selectSource(fresh);
+    else mainView('home');
+  } catch (e) {
+    mainView('home');
+    toast(e.message, true, 7000);
+  } finally {
+    btn.disabled = false;
+    copyTarget = null;
+  }
 });
 
 // ---------- select source: one click = load + shuffle ----------

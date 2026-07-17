@@ -133,8 +133,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 }
 .source:hover { background: var(--raise); color: var(--text); }
 .source.selected { background: var(--raise); color: var(--accent); }
-.source.locked { opacity: 0.4; cursor: not-allowed; }
-.source.locked:hover { background: none; color: var(--dim); }
+.source.locked { opacity: 0.45; }
+.source.locked:hover { opacity: 0.8; background: var(--raise); }
 .source .icon { flex: none; width: 22px; text-align: center; font-size: 13px; }
 .source img.icon { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; }
 .source .name { overflow: hidden; text-overflow: ellipsis; }

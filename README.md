@@ -46,7 +46,9 @@ The installer lands in `dist/`.
 
 ## Why some playlists show a 🔒
 
-Since Spotify's **February 2026 Dev Mode changes** (enforced March 9, 2026), personal API apps can only read the tracks of playlists you **own or collaborate on**. Playlists made by other accounts (e.g. "by Playlistor") return metadata only — that's also why the old version of this tool got `403 Forbidden`. Workaround: in Spotify, select all tracks in that playlist and copy them into a playlist of your own; it'll then be shuffleable here.
+Since Spotify's **February 2026 Dev Mode changes** (enforced March 9, 2026), personal API apps can only read the tracks of playlists you **own or collaborate on**. Playlists made by other accounts (e.g. "by Playlistor") return metadata only — that's also why the old version of this tool got `403 Forbidden`.
+
+**Built-in workaround:** click a locked playlist and True Shuffle offers to copy it into your account. The copy is made by reading the playlist's *public* embed page (no API restrictions apply there) and recreating it as a playlist you own. Caveats: the source playlist must be public, very large playlists may only expose their first ~100 tracks publicly (the app tells you if the copy is partial), and this depends on Spotify's public page format staying stable.
 
 Other 2026 API changes this app already accounts for: `/playlists/{id}/tracks` → `/playlists/{id}/items`, playlist creation via `POST /me/playlists`, and the `tracks`→`items` / `track`→`item` field renames.
 
