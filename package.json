@@ -1,0 +1,25 @@
+{
+  "name": "true-shuffle",
+  "version": "1.0.0",
+  "description": "Truly random Spotify shuffle — unbiased Fisher-Yates, not Spotify's weighted shuffle.",
+  "main": "src/main/main.js",
+  "author": "Devin",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/shuffle.test.js",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.devin.trueshuffle",
+    "productName": "True Shuffle",
+    "files": ["src/**/*", "package.json"],
+    "mac": { "category": "public.app-category.music" },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage" }
+  }
+}
